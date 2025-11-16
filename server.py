@@ -1,12 +1,11 @@
 # server.py
-from asyncio import subprocess
 from fastmcp import FastMCP
 import subprocess
 import xml.etree.ElementTree as ET
 import re
 import os
 
-mcp = FastMCP("Demo 🚀")
+mcp = FastMCP("SE333 Test Agent")
 
 @mcp.tool
 def add(a: int, b: int) -> int:
