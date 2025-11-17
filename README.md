@@ -116,7 +116,26 @@ The agent will:
 ---
 
 
+## Troubleshooting
 
+### Agent not visible in VS Code:
+
+Restart VS Code and confirm the MCP server is running.
+
+### Coverage report missing:
+Run:
+
+mvn test
+
+## Pull request creation fails
+
+Authenticate GitHub CLI:
+
+gh auth login
+
+## Commit blocked
+
+Ensure the current branch is not main or master.
 
 
 
