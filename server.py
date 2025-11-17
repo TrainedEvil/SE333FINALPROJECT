@@ -312,17 +312,11 @@ def git_pull_request(repo_path: str, base: str = "main",
 
     except Exception as e:
         return {"error": str(e)}
-
+    
 @mcp.tool()
-def spec_based_test_generator(source_file: str, test_dir: str) -> dict:
+def generate_unit_tests(source_file: str, test_dir: str) -> dict:
     """
-    Generate a more advanced, spec-based set of JUnit tests using:
-    - equivalence classes
-    - boundary values
-    - invalid inputs
-
-    This extension tool tries to understand the method signatures and produce
-    stronger tests than the basic generator.
+    Generate basic JUnit 4 test skeletons for all public methods.
     """
 
     try:
@@ -332,76 +326,47 @@ def spec_based_test_generator(source_file: str, test_dir: str) -> dict:
         # Extract class name
         class_match = re.search(r"class\s+(\w+)", code)
         if not class_match:
-            return {"error": "Class name not found."}
+            return {"error": "Class name not found in source file."}
+
         class_name = class_match.group(1)
 
-        # Extract method signatures
-        # Example matched:
-        # public int add(int a, int b)
-        method_pattern = r"public\s+([\w<>]+)\s+(\w+)\s*\(([^)]*)\)"
+        # Extract method names (public instance methods)
+        method_pattern = r"public\s+[\w<>\[\]]+\s+(\w+)\s*\("
         methods = re.findall(method_pattern, code)
 
+        # Ensure test directory exists
         if not os.path.exists(test_dir):
             os.makedirs(test_dir)
 
-        test_file_path = os.path.join(test_dir, f"{class_name}SpecTest.java")
+        test_file_path = os.path.join(test_dir, f"{class_name}Test.java")
 
-        # Start building test file
+        # Build JUnit 4 test file
         test_code = f"""
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.Test;
+import static org.junit.Assert.*;
 
-public class {class_name}SpecTest {{
-
-    {class_name} obj = new {class_name}();
-"""
-
-        # Parameter value sets
-        boundary_values = ["0", "1", "-1", "Integer.MAX_VALUE", "Integer.MIN_VALUE"]
-
-        for return_type, method_name, params in methods:
-            params = params.strip()
-            param_list = []
-
-            if params:
-                raw_params = [p.strip() for p in params.split(",")]
-                for p in raw_params:
-                    # "int a" -> type="int", name="a"
-                    pieces = p.split()
-                    if len(pieces) >= 2:
-                        p_type, p_name = pieces[-2], pieces[-1]
-                        param_list.append((p_type, p_name))
-
-            # Test header
-            test_code += f"""
+public class {class_name}Test {{
 
     @Test
-    void test_{method_name}_equivalence_and_boundaries() {{
+    public void testClassInstantiation() {{
+        // Basic instantiation check
+        new {class_name}();
+    }}
 """
 
-            # Generate value combinations
-            if param_list:
-                test_code += "        // Equivalence classes & boundary testing\n"
-                for p_type, p_name in param_list:
-                    if p_type in ("int", "Integer"):
-                        for val in boundary_values:
-                            test_code += f"        // Test {method_name} with {p_name} = {val}\n"
-                            args = []
-                            for p_type2, p_name2 in param_list:
-                                if p_name2 == p_name:
-                                    args.append(val)
-                                else:
-                                    args.append("1")  # default
-                            arg_string = ", ".join(args)
-                            test_code += f"        assertDoesNotThrow(() -> obj.{method_name}({arg_string}));\n"
-
-                # Invalid input testing (if parameters are objects)
-                test_code += "        // Invalid input tests\n"
-                for p_type, p_name in param_list:
-                    if p_type not in ("int", "double", "boolean", "float", "long"):
-                        test_code += f"        assertThrows(Exception.class, () -> obj.{method_name}(null));\n"
-
-            test_code += "    }\n"
+        for method_name in methods:
+            test_code += f"""
+    @Test
+    public void test_{method_name}() {{
+        {class_name} obj = new {class_name}();
+        try {{
+            // TODO: Add proper parameters and assertions
+            obj.{method_name}();
+        }} catch (Exception e) {{
+            fail("Unexpected exception: " + e.getMessage());
+        }}
+    }}
+"""
 
         test_code += "\n}\n"
 
@@ -409,9 +374,144 @@ public class {class_name}SpecTest {{
             f.write(test_code)
 
         return {
-            "message": "Spec-based test file generated",
+            "message": "JUnit 4 test file generated.",
             "test_file": test_file_path,
-            "methods_analyzed": [m[1] for m in methods]
+            "methods_found": methods
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+def spec_based_test_generator(source_file: str, test_dir: str) -> dict:
+    """
+    Generate advanced JUnit 4 tests using:
+    - boundary values
+    - equivalence class partitioning
+    - invalid input testing
+    """
+
+    try:
+        # Load source file
+        with open(source_file, "r") as f:
+            code = f.read()
+
+        # Extract class name
+        class_match = re.search(r"class\s+(\w+)", code)
+        if not class_match:
+            return {"error": "Class name not found in source file."}
+
+        class_name = class_match.group(1)
+
+        # Extract full method signatures
+        method_pattern = r"public\s+([\w<>\[\]]+)\s+(\w+)\s*\(([^)]*)\)"
+        signatures = re.findall(method_pattern, code)
+
+        if not os.path.exists(test_dir):
+            os.makedirs(test_dir)
+
+        test_file_path = os.path.join(test_dir, f"{class_name}SpecTest.java")
+
+        # JUnit 4 test class header
+        test_code = f"""
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+public class {class_name}SpecTest {{
+
+    private {class_name} obj = new {class_name}();
+
+"""
+
+        # Values to test for integer parameters
+        boundary_values = ["0", "1", "-1", "Integer.MAX_VALUE", "Integer.MIN_VALUE"]
+
+        for return_type, method_name, params in signatures:
+
+            # Parse parameters
+            param_list = []
+            if params.strip():
+                raw_params = [p.strip() for p in params.split(",")]
+                for p in raw_params:
+                    # e.g., "int x", "String name"
+                    parts = p.split()
+                    if len(parts) >= 2:
+                        p_type = parts[-2]
+                        p_name = parts[-1]
+                        param_list.append((p_type, p_name))
+
+            # Start test block
+            test_code += f"""
+    @Test
+    public void test_{method_name}_spec() {{
+        // Boundary and equivalence tests for {method_name}
+"""
+
+            # Case: method has params
+            if param_list:
+                # Boundary testing
+                for p_type, p_name in param_list:
+                    if p_type in ("int", "Integer"):
+                        for val in boundary_values:
+                            args = []
+                            for pt2, pn2 in param_list:
+                                args.append(val if pn2 == p_name else "1")
+
+                            arg_string = ", ".join(args)
+
+                            test_code += f"""
+        try {{
+            obj.{method_name}({arg_string});
+        }} catch (Exception e) {{
+            fail("{method_name} should not throw for {p_name} = {val}");
+        }}
+"""
+
+                # Invalid input for object types
+                for p_type, p_name in param_list:
+                    if p_type not in ("int", "double", "float", "long", "boolean", "char"):
+                        # null test
+                        args = []
+                        for pt2, pn2 in param_list:
+                            if pn2 == p_name:
+                                args.append("null")
+                            else:
+                                args.append("null" if pt2 not in ("int", "double", "float", "long", "boolean", "char") else "0")
+
+                        arg_string = ", ".join(args)
+
+                        test_code += f"""
+        try {{
+            obj.{method_name}({arg_string});
+            fail("Expected exception for null {p_name}");
+        }} catch (Exception expected) {{
+            // Expected
+        }}
+"""
+
+            else:
+                # Method has no parameters
+                test_code += f"""
+        try {{
+            obj.{method_name}();
+        }} catch (Exception e) {{
+            fail("{method_name} should not throw with no parameters");
+        }}
+"""
+
+            test_code += "    }\n"
+
+        test_code += "\n}\n"
+
+        # Write to file
+        with open(test_file_path, "w") as f:
+            f.write(test_code)
+
+        return {
+            "message": "JUnit 4 spec-based test file generated.",
+            "test_file": test_file_path,
+            "methods_analyzed": [m[1] for m in signatures]
         }
 
     except Exception as e:
